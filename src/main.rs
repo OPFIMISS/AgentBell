@@ -2,6 +2,7 @@
 
 mod adapters;
 mod discovery;
+mod integrations;
 mod model;
 mod server;
 mod store;
@@ -137,8 +138,10 @@ async fn main() -> Result<()> {
 async fn serve(port_override: u16, no_open: bool) -> Result<()> {
     let store = store::Store::load(port_override)?;
     let port = store.config.port;
+    let integration_dir = store.dir.clone();
     let device_id = store.config.device_id.clone();
     let device_name = store.config.device_name.clone();
+    tokio::task::spawn_blocking(move || integrations::configure(port, integration_dir));
     let state = server::AppState::new(store);
     adapters::start_watchers(state.clone());
     if let Err(err) = discovery::start(state.clone(), device_id, device_name, port).await {

@@ -1,5 +1,12 @@
 const $ = (id) => document.getElementById(id)
-const state = { token: localStorage.getItem('agentbell_token') || '', data: null, ws: null, reconnect: 0 }
+const state = {
+  token: localStorage.getItem('agentbell_token') || '',
+  data: null,
+  ws: null,
+  reconnect: 0,
+  selecting: false,
+  selectedEvents: new Set()
+}
 const pairSecret = new URLSearchParams(location.search).get('pair') || ''
 
 function esc(value = '') {
@@ -98,19 +105,115 @@ function renderStats(events) {
 }
 
 function renderEvents(events) {
+  const currentIds = new Set(events.map(event => event.id))
+  state.selectedEvents.forEach(id => {
+    if (!currentIds.has(id)) state.selectedEvents.delete(id)
+  })
+  if (!events.length) state.selecting = false
   $('eventCount').textContent = events.length
+  updateSelectionUi(events)
   if (!events.length) {
     $('eventList').innerHTML = '<div class="empty-state"><i>✓</i><strong>通知链路已经就绪</strong><p>Agent 完成任务后会出现在这里</p></div>'
     return
   }
   $('eventList').innerHTML = events.map(eventCard).join('')
+  bindEventSelection()
 }
 
 function eventCard(event) {
   const symbol = { completed: '✓', failed: '!', needs_input: '?', approval_required: '→', started: '•' }[event.kind] || '•'
   const kindText = { completed: '已完成', failed: '失败', needs_input: '等待回复', approval_required: '等待批准', started: '已开始' }[event.kind] || event.kind
   const time = new Date(event.timestamp_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return `<article class="event-card ${esc(event.kind)}"><div class="event-icon">${symbol}</div><div class="event-main"><strong>${esc(event.title)}</strong><p>${esc(event.message)}${event.project ? ` · ${esc(event.project)}` : ''}</p></div><div class="event-meta"><b>${esc(event.agent)}</b>${kindText} · ${time}</div></article>`
+  const selected = state.selectedEvents.has(event.id)
+  const checkbox = state.selecting ? `<label class="event-check" aria-label="选择 ${esc(event.title)}"><input type="checkbox" data-event-select="${esc(event.id)}" ${selected ? 'checked' : ''}></label>` : ''
+  return `<article class="event-card ${esc(event.kind)}${state.selecting ? ' selecting' : ''}${selected ? ' selected' : ''}" data-event-id="${esc(event.id)}" aria-selected="${selected}">${checkbox}<div class="event-icon">${symbol}</div><div class="event-main"><strong>${esc(event.title)}</strong><p>${esc(event.message)}${event.project ? ` · ${esc(event.project)}` : ''}</p></div><div class="event-meta"><b>${esc(event.agent)}</b>${kindText} · ${time}</div></article>`
+}
+
+function updateSelectionUi(events = state.data?.events || []) {
+  const admin = Boolean(state.data?.admin)
+  $('selectButton').classList.toggle('hidden', !admin || !events.length)
+  $('selectButton').textContent = state.selecting ? '取消' : '选择'
+  $('selectionToolbar').classList.toggle('hidden', !admin || !state.selecting)
+  $('selectedCount').textContent = `已选 ${state.selectedEvents.size} 项`
+  const allSelected = events.length > 0 && state.selectedEvents.size === events.length
+  $('selectAllButton').textContent = allSelected ? '取消全选' : '全选'
+  $('deleteSelectedButton').disabled = state.selectedEvents.size === 0
+}
+
+function setSelectionMode(enabled) {
+  state.selecting = enabled
+  if (!enabled) state.selectedEvents.clear()
+  renderEvents(state.data?.events || [])
+}
+
+function toggleEventSelection(id, force) {
+  const selected = force ?? !state.selectedEvents.has(id)
+  if (selected) state.selectedEvents.add(id)
+  else state.selectedEvents.delete(id)
+  renderEvents(state.data?.events || [])
+}
+
+function bindEventSelection() {
+  document.querySelectorAll('[data-event-select]').forEach(input => {
+    input.addEventListener('click', event => event.stopPropagation())
+    input.addEventListener('change', () => toggleEventSelection(input.dataset.eventSelect, input.checked))
+  })
+  document.querySelectorAll('[data-event-id]').forEach(card => {
+    let timer
+    let startX = 0
+    let startY = 0
+    let longPressed = false
+    const cancelPress = () => clearTimeout(timer)
+    card.addEventListener('pointerdown', event => {
+      if (state.selecting || event.button !== 0) return
+      startX = event.clientX
+      startY = event.clientY
+      longPressed = false
+      timer = setTimeout(() => {
+        longPressed = true
+        state.selecting = true
+        state.selectedEvents.add(card.dataset.eventId)
+        if ('vibrate' in navigator) navigator.vibrate(35)
+        renderEvents(state.data?.events || [])
+      }, 520)
+    })
+    card.addEventListener('pointermove', event => {
+      if (Math.hypot(event.clientX - startX, event.clientY - startY) > 8) cancelPress()
+    })
+    card.addEventListener('pointerup', cancelPress)
+    card.addEventListener('pointercancel', cancelPress)
+    card.addEventListener('pointerleave', cancelPress)
+    card.addEventListener('click', event => {
+      if (longPressed) {
+        event.preventDefault()
+        return
+      }
+      if (state.selecting && !event.target.closest('input')) toggleEventSelection(card.dataset.eventId)
+    })
+  })
+}
+
+async function deleteSelectedEvents() {
+  const ids = [...state.selectedEvents]
+  if (!ids.length) return
+  if (!window.confirm(`确定删除选中的 ${ids.length} 条任务记录吗？此操作无法撤销。`)) return
+  const button = $('deleteSelectedButton')
+  button.disabled = true
+  button.textContent = '正在删除'
+  try {
+    const result = await api('/api/events/delete', { method: 'POST', body: { ids } })
+    state.data.events = state.data.events.filter(event => !state.selectedEvents.has(event.id))
+    state.selectedEvents.clear()
+    state.selecting = false
+    renderStats(state.data.events)
+    renderEvents(state.data.events)
+    toast(`已删除 ${result.removed} 条任务记录`)
+  } catch (error) {
+    toast(`删除失败：${error.message}`)
+    updateSelectionUi()
+  } finally {
+    button.textContent = '删除'
+  }
 }
 
 function renderDevices(devices, pending, discovered) {
@@ -123,7 +226,7 @@ function renderDevices(devices, pending, discovered) {
 }
 
 function renderAdapters(adapters) {
-  const short = { codex: 'CX', 'deepseek-harness-eac': 'DS', 'claude-code-haha': 'HH' }
+  const short = { codex: 'CX', 'deepseek-harness-eac': 'DS', 'claude-code-haha': 'HH', opencode: 'OC', openclaw: 'CL', 'hermes-agent': 'HE' }
   $('adapterList').innerHTML = adapters.map(a => `<div class="adapter-card"><div class="agent-avatar">${short[a.id] || 'AI'}</div><div class="card-copy"><strong>${esc(a.name)}</strong><span>${esc(a.mode)}</span></div><div><span class="state-badge">默认监听</span></div></div>`).join('')
 }
 
@@ -227,4 +330,12 @@ document.querySelector('[data-tab="diagnostics"]').addEventListener('click', loa
 $('pairButton').addEventListener('click', pairDevice)
 $('notifyButton').addEventListener('click', () => requestNotifications(true))
 $('testButton').addEventListener('click', async () => { await api('/api/test', { method: 'POST' }); toast('测试通知已发送') })
+$('selectButton').addEventListener('click', () => setSelectionMode(!state.selecting))
+$('selectAllButton').addEventListener('click', () => {
+  const events = state.data?.events || []
+  if (state.selectedEvents.size === events.length) state.selectedEvents.clear()
+  else events.forEach(event => state.selectedEvents.add(event.id))
+  renderEvents(events)
+})
+$('deleteSelectedButton').addEventListener('click', deleteSelectedEvents)
 load()

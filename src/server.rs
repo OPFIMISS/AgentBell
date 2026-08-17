@@ -73,6 +73,11 @@ struct InstallRequest {
     agent: String,
 }
 
+#[derive(Deserialize)]
+struct DeleteEventsRequest {
+    ids: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct StatusResponse {
     admin: bool,
@@ -129,6 +134,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/pair/approve", post(approve))
         .route("/api/device/revoke", post(revoke))
         .route("/api/events", post(emit_event))
+        .route("/api/events/delete", post(delete_events))
         .route("/api/events/poll", get(poll_events))
         .route("/api/test", post(test_event))
         .route("/api/diagnostics", get(diagnostics))
@@ -242,6 +248,24 @@ async fn status(
                 id: "claude-code-haha",
                 name: "Claude Code Haha",
                 mode: "默认监听 Haha 会话终态",
+                state: "ready",
+            },
+            AdapterStatus {
+                id: "opencode",
+                name: "OpenCode",
+                mode: "自动配置 session.idle / session.error 插件",
+                state: "ready",
+            },
+            AdapterStatus {
+                id: "openclaw",
+                name: "OpenClaw",
+                mode: "自动配置 agent_end 插件 Hook",
+                state: "ready",
+            },
+            AdapterStatus {
+                id: "hermes-agent",
+                name: "Hermes Agent",
+                mode: "自动配置 on_session_end 插件 Hook",
                 state: "ready",
             },
         ],
@@ -471,6 +495,34 @@ async fn revoke(
     match store.save_config() {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn delete_events(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<DeleteEventsRequest>,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let ids = body
+        .ids
+        .into_iter()
+        .take(100)
+        .map(|id| clean(&id, 160))
+        .filter(|id| !id.is_empty())
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return (StatusCode::BAD_REQUEST, "请选择要删除的任务记录").into_response();
+    }
+    let mut store = state.store.lock().await;
+    match store.delete_events(&ids) {
+        Ok(removed) => {
+            info!(removed, "已删除任务历史");
+            Json(serde_json::json!({ "removed": removed })).into_response()
+        }
+        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
     }
 }
 
