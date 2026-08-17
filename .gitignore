@@ -1,0 +1,6 @@
+/target/
+/dist/
+/research/
+/artifacts/
+/.agentbell-dev/
+*.log

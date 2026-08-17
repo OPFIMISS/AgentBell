@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#18796f">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <title>AgentBell</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="brand-copy"><strong>AgentBell</strong><small>Agent 完成通知</small></div>
+      <div class="connection"><i id="liveDot"></i><span id="liveText">正在连接</span></div>
+    </header>
+    <main id="loading" class="center-state"><div class="loader"></div><p>正在连接电脑</p></main>
+    <main id="pairView" class="pair-view hidden">
+      <section class="pair-panel">
+        <div class="phone-pulse"><div class="bell-shape"></div></div>
+        <p class="eyebrow">新设备</p><h1>连接到 AgentBell</h1>
+        <p class="lede">授权后，这台设备会接收 Agent 的完成、失败和等待操作通知。</p>
+        <label for="deviceName">设备名称</label>
+        <input id="deviceName" maxlength="80" autocomplete="name" value="我的手机">
+        <button id="pairButton" class="primary-button">允许接收通知</button>
+        <p id="pairHint" class="hint"></p>
+      </section>
+    </main>
+    <main id="appView" class="workspace hidden">
+      <aside id="adminRail" class="rail hidden">
+        <nav>
+          <button class="nav-item active" data-tab="overview"><span class="nav-icon">⌁</span>概览</button>
+          <button class="nav-item" data-tab="devices"><span class="nav-icon">▣</span>设备</button>
+          <button class="nav-item" data-tab="agents"><span class="nav-icon">◫</span>Agent</button>
+          <button class="nav-item" data-tab="diagnostics"><span class="nav-icon">i</span>诊断</button>
+        </nav>
+        <div class="rail-foot"><span>本地运行</span><strong id="serverName">AgentBell</strong></div>
+      </aside>
+      <section class="content">
+        <div class="page-head">
+          <div><p class="eyebrow" id="pageEyebrow">通知中心</p><h1 id="pageTitle">最近任务</h1></div>
+          <div class="head-actions"><button id="notifyButton" class="secondary-button">开启手机通知</button><button id="testButton" class="primary-button admin-only hidden">发送测试</button></div>
+        </div>
+        <div id="overviewTab" class="tab-page"><section id="stats" class="stats-row"></section><section class="section-block"><div class="section-title"><div><h2>任务动态</h2><p>来自已接入 Agent 的最新状态</p></div><span id="eventCount" class="count-chip">0</span></div><div id="eventList" class="event-list"></div></section></div>
+        <div id="devicesTab" class="tab-page hidden"><div class="two-column"><section class="section-block pair-card"><div class="section-title"><div><h2>连接手机</h2><p>手机和电脑需处于同一网络</p></div></div><div id="qrCode" class="qr-code"></div><code id="pairUrl" class="pair-url"></code></section><section class="section-block"><div class="section-title"><div><h2>已授权设备</h2><p>只有这些设备可以接收任务内容</p></div></div><div id="pendingList"></div><div id="discoveredList" class="device-list"></div><div id="deviceList" class="device-list"></div></section></div></div>
+        <div id="agentsTab" class="tab-page hidden"><section class="section-block"><div class="section-title"><div><h2>Agent 接入</h2><p>监听真实终态，不根据静默时间猜测</p></div></div><div id="adapterList" class="adapter-list"></div></section></div>
+        <div id="diagnosticsTab" class="tab-page hidden"><section class="section-block"><div class="section-title"><div><h2>运行诊断</h2><p id="logPath">持久日志</p></div><button id="refreshDiagnostics" class="secondary-button">刷新</button></div><pre id="logTail" style="white-space:pre-wrap;overflow:auto;max-height:65vh;font-size:12px;background:#182124;color:#dcebe6;padding:16px;border-radius:8px">正在读取日志...</pre></section></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
